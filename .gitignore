@@ -1,0 +1,11 @@
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+.env*
+!.env.example
+.openai/local/
+*.tar.gz
+.local/
+*.sqlite*
+assets/originals/
