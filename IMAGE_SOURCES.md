@@ -77,3 +77,22 @@ Use case: product-mockup. Asset type: denim ecommerce product collection photo. 
 
 
 
+
+## Hanging rail garments
+
+Generated 2 November 2026 with the built-in `image_gen` tool. Both assets were visually inspected, and their alpha channels were checked: transparent background pixels and opaque denim are present. The WebP versions preserve alpha, with no model, shoes, floor or scenery. These are illustrative garment cutouts, not verified inventory photographs or true 3D product models.
+
+| Website asset | Local original | Dimensions | WebP size |
+| --- | --- | --- | --- |
+| `public/images/rail-indigo.webp` | `assets/originals/rail-indigo.png` | 1024 × 1536 | 254,288 bytes |
+| `public/images/rail-faded-blue.webp` | `assets/originals/rail-faded-blue.png` | 1024 × 1536 | 300,724 bytes |
+
+Indigo source: `C:/Users/mryad/.codex/generated_images/01a19b8c-874b-7bb3-8e64-2f533489245a/exec-9bcfd659-53e5-44d4-acce-aba6bbbf05cb.png`.
+
+Indigo prompt: Use case: product-mockup. Asset type: a premium denim garment cutout for an interactive ecommerce hanging rail scene. Create ONE photorealistic full-length pair of dark indigo straight-cut denim jeans hanging from a slim polished chrome trouser clip hanger with two waist clips and a clearly visible central hook. Front-facing and almost perfectly symmetrical, with a natural slight fabric drape, five-pocket construction, small copper rivets, ochre stitching, authentic fine denim weave and restrained whiskering. No person or mannequin, no legs or shoes. Portrait composition approximately 2:3, centered garment, complete hanger hook and both hems visible, jeans occupying most of the image height, modest transparent margins. Soft dramatic studio product lighting, dimensional detailed folds with subtle highlights, believable dark indigo fabric. GENUINELY TRANSPARENT alpha background, no wall, floor, rail, background, cast floor shadow, text, logo, watermark, labels or border. The visible garment and hanger are the only objects. Clean precise cutout edges, usable over a dark charcoal website.
+
+Faded-blue source: `C:/Users/mryad/.codex/generated_images/01a19b8c-874b-7bb3-8e64-2f533489245a/exec-6ac5e73a-0bdc-4e99-9154-e60fb5f752be.png`.
+
+Faded-blue edit prompt: Use case: precise-object-edit. Edit target: the supplied isolated hanging indigo jeans. Produce a matching garment cutout for the same denim rail. Change only the denim wash from dark indigo to an elegant medium faded blue, with subtle worn-in fading on thighs and seams, preserving detailed realistic denim weave. Keep the same exact front-facing camera, full-length straight silhouette, natural folds, chrome clip hanger and central hook, copper rivets, stitching, silhouette position and scale, and clear margins. Retain genuine transparent alpha background. The jeans and hanger are the only objects. No person, mannequin, text, logos, scenery or ground shadow. Match original composition 1024x1536 portrait.
+
+The existing Next.js `sharp` dependency performed format compression only; no package was added. Original PNGs remain unchanged in the local originals folder.

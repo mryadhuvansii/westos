@@ -1,6 +1,6 @@
 # WESTOS storefront
 
-A responsive denim storefront built from the WESTOS specification files in the parent folder. The visual direction uses warm paper, deep blue, generous editorial typography, and AI-generated denim campaign imagery, with the requested [UI UX Pro Max skill](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill) guiding the interface.
+A responsive denim storefront built from the WESTOS specification files in the parent folder. The homepage is an immersive dark denim room inspired by the supplied Garuda rail reference, with a draggable jeans rail, category filters, and product previews connected to the bag. Shopping pages use warm paper and deep blue. AI-generated garment imagery and the requested [UI UX Pro Max skill](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill) guide the interface.
 
 This delivery is a working frontend and a prepared YouPI payment integration. It is **not the complete commerce platform** described by the specifications. The catalog is sample data, ordering is unavailable, and payments are disabled by default. No gateway has been hosted or tested with live funds.
 
@@ -25,7 +25,8 @@ Without configuration, the bridge runs on `http://127.0.0.1:8787` in disabled mo
 
 ## Included
 
-- Homepage, searchable and filterable catalog, product pages, size selection, and fit guide.
+- Interactive denim-room homepage, searchable and filterable catalog, product pages, size selection, and fit guide.
+- Native horizontal scrolling, mouse drag, arrow controls, and keyboard-accessible garment previews. The rail uses CSS perspective with image planes; it does not claim a true 360-degree garment model.
 - Shopping bag and saved pieces persisted in the current browser, with input validation when restoring saved data.
 - A four-step checkout preview. Address details stay in memory while the page is mounted; no real order is submitted.
 - Brand story, help, customer account preview, and an illustrative jeans buyback eligibility checker.
@@ -51,7 +52,7 @@ The only frontend runtime dependencies are Next.js, React, and React DOM. The pa
 | --- | --- |
 | Sample products, prices, fits, images | `lib/catalog.ts` |
 | Cart rules and browser persistence | `lib/cart.ts`, `components/store.tsx` |
-| Main visual system and homepage | `app/globals.css`, `app/page.tsx` |
+| Main visual system and homepage | `app/globals.css`, `app/room.css`, `app/page.tsx`, `components/denim-room.tsx` |
 | Secondary shopping pages | `components/`, `app/secondary.css` |
 | Story, fit guide, help | `app/story/`, `app/fit-guide/`, `app/help/`, `app/editorial.css` |
 | Payment configuration and setup | `.env.example`, `PAYMENT_SETUP.md` |
@@ -71,3 +72,6 @@ Payment activation additionally depends on repairing and reviewing the identifie
 The scope originates in `../WESTOS_MASTER_SPECIFICATION.md`, `../WESTOS_MODULE_MAP.md`, `../WESTOS_ARCHITECTURE_DECISIONS.md`, `../WESTOS_IMPLEMENTATION_ROADMAP.md`, and `../WESTOS_OPEN_DECISIONS.md`. Those documents describe the broader platform and unresolved business decisions; this frontend does not resolve them by inventing rules.
 
 The gateway reference is `../youpi-reference` at commit `556bd43`. It was reviewed as source, not deployed. The image prompts and provenance are recorded in [IMAGE_SOURCES.md](IMAGE_SOURCES.md).
+
+The rail's browser self-check is in tests/rail.browser.js. Open the homepage and run it in the browser console to check filtering, modal focus, size selection, and reopening without changing the bag. The normal browser cursor is preserved; no mouse-following decorative cursor is implemented. The local Next development indicator is disabled.
+
