@@ -1,3 +1,4 @@
+import BuybackVisibility from '@/components/buyback-visibility';
 import type { Metadata } from 'next';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -6,7 +7,7 @@ import BuybackChecker from '@/components/buyback-checker';
 export const metadata: Metadata = { title: 'Wear. Return. Renew. — Buyback', description: 'Discover Westos Jeans Buyback: give your old Westos jeans a new chapter and save on your next pair. Program coming soon.' };
 
 export default function BuybackPage() {
-  return <>
+  return <BuybackVisibility fallback={<section className="container secondary-empty"><p className="eyebrow">WESTOS JEANS BUYBACK</p><h1>Buyback is currently unavailable.</h1><p>The program information and eligibility checker are paused. No claims or credits are being accepted.</p><Link href="/shop/" className="button">Explore the collection ↗</Link></section>}>
     <section className="buyback-hero"><div className="buyback-hero-copy"><p className="eyebrow">WESTOS JEANS BUYBACK · COMING SOON</p><h1>Wear.<br />Return.<br /><em>Renew.</em></h1><p>Good denim has more than one chapter.<br />Let your old pair help you find your next.</p><a href="#eligibility" className="button">Explore your eligibility <span aria-hidden="true">↗</span></a><span className="buyback-hero-caption">SAME WESTOS SPIRIT. A NEW BEGINNING.</span></div><div className="buyback-hero-image"><Image src="/images/buyback.webp" alt="A stack of worn blue jeans, ready for their next chapter" fill sizes="(max-width: 700px) 100vw, 55vw" priority /></div></section>
     <div className="container">
       <section className="buyback-intro"><p className="eyebrow">KEEP THE STORY GOING</p><h2>Your favourites deserve<br />a thoughtful next chapter.</h2><p>We’re building a way to return your eligible Westos jeans when your next pair arrives. A simple exchange, a little off your new pair, and more possibilities for the denim you’ve loved.</p></section>
@@ -26,5 +27,5 @@ export default function BuybackPage() {
       ].map(([question, answer]) => <details key={question}><summary>{question}<span aria-hidden="true">+</span></summary><p>{answer}</p></details>)}</div></section>
       <section className="buyback-final"><p className="eyebrow">YOUR NEXT CHAPTER STARTS HERE</p><h2>Find a pair worth living in.</h2><Link href="/shop" className="button">Explore the collection <span aria-hidden="true">↗</span></Link></section>
     </div>
-  </>;
+  </BuybackVisibility>;
 }

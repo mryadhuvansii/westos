@@ -1,0 +1,3 @@
+'use client';
+import Link from 'next/link';
+export default function ShopError({reset}:{error:Error,reset:()=>void}){return <div className="container catalog-page"><div className="page-heading"><p className="eyebrow">COLLECTION UNAVAILABLE</p><h1>We couldn&apos;t load the denim collection.</h1><p>Your saved bag is still on this browser.</p></div><button className="button" onClick={reset}>Try again</button><Link href="/" className="button secondary">Back to home</Link></div>;}

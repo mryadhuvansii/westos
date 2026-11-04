@@ -1,0 +1,1 @@
+export default function ProductLoading(){return <div className="container"><div className="page-heading"><p className="eyebrow">A MOMENT PLEASE</p><h1>Your denim is on its way.</h1></div><div className="loading-page" role="status">Loading this piece…</div></div>;}

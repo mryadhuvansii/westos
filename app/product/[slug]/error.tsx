@@ -1,0 +1,3 @@
+'use client';
+import Link from 'next/link';
+export default function ProductError({reset}:{error:Error,reset:()=>void}){return <div className="container secondary-empty"><h1>This piece didn&apos;t load.</h1><p>Your saved bag is still on this browser. Please try again.</p><button className="button" onClick={reset}>Try again</button><Link href="/shop/" className="button secondary">Browse the collection</Link></div>;}

@@ -1,77 +1,92 @@
-# WESTOS storefront
+# WESTOS storefront and owner desk
 
-A responsive denim storefront built from the WESTOS specification files in the parent folder. The homepage is an immersive dark denim room inspired by the supplied Garuda rail reference, with a draggable jeans rail, category filters, and product previews connected to the bag. Shopping pages use warm paper and deep blue. AI-generated garment imagery and the requested [UI UX Pro Max skill](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill) guide the interface.
+WESTOS has a denim-room storefront and a server-backed owner admin panel. The rail keeps the Garuda-inspired dark showroom design, with original generated garment imagery. The requested UI UX Pro Max skill guides the interface.
 
-This delivery is a working frontend and a prepared YouPI payment integration. It is **not the complete commerce platform** described by the specifications. The catalog is sample data, ordering is unavailable, and payments are disabled by default. No gateway has been hosted or tested with live funds.
+**Current delivery status:** the admin and single-store inventory update is being validated locally. Publishing is pending repository access approval; the previously published static storefront remains online. The source described below is the new server-backed version.
+
+Products, colour-size stock, reservations, stock sales, inspected returns and settings use shared D1 storage; uploaded photos use R2. Customer orders, customer authentication, fulfillment and live payments are still unavailable. The eight starter products are samples and begin with **zero stock**. This phase manages one store/warehouse.
+
+## Owner operations
+
+See [ADMIN_GUIDE.md](ADMIN_GUIDE.md) for the Hindi/Roman operating guide. After this update is published, open `/admin/` and sign in with the site's owner ChatGPT account. There is no default admin password.
+
+The owner email is configured privately as `WESTOS_OWNER_EMAIL` in Sites runtime settings. The first authorized **Set up store management** action locks admin access to that platform user's stable ID. Later visitors cannot become the owner by using the same email with a different identity. No arbitrary first-user enrollment is allowed. Preserve the site's current owner-private audience.
+
+- **Products:** add/edit name, price, MRP, fit, description and visibility. One product supports multiple colours, up to six photos per colour and independent colour-size SKUs. New addresses work without rebuilding; saved addresses and existing SKUs remain fixed.
+- **Inventory:** see physical, reserved and available quantities per SKU. Recount with a reason; reserve several SKUs together; release cancellations; record a stock sale once; receive inspected partial returns. Expired holds stop reducing availability automatically. Conflicting counts and overselling are rejected. Recording a stock sale does not confirm payment.
+- **Photos:** JPEG, PNG and WebP uploads, maximum 5 MB. SVG and external image URLs are not accepted.
+- **Settings:** receiving UPI defaults to `vijay@upi`; this stores the intended destination only and does not change or activate YouPI. Buyback defaults off; its switch controls program information, promotions and the preliminary checklist. It cannot enable claims, credits or discounts.
+- **Activity:** the last 100 changes are shown; the database retains the history.
+
+Changes survive browser/device changes. The storefront refreshes shared data on focus and every 30 seconds while visible. Reload for an immediate fresh view. The bag and wishlist still belong to the current browser. The bag keeps colours separate; zero available stock prevents adding that variant. The bag never reserves inventory. Existing stores use the admin's one-time **Upgrade inventory** action, which preserves old stock under the original colour.
 
 ## Run locally
 
-Use Node.js **24.22.1 or later** to cover the native payment bridge and the reviewed YouPI gateway's declared requirement.
-
-From this folder:
+Use Node.js 24.22.1 or later before deploying the separately hosted YouPI gateway. Local validation in this environment used Node 24.21.0 successfully.
 
 ```sh
 npm install
+npm run build
+```
+
+On the first local setup, apply the schema once (do not replay an already-applied migration):
+
+```sh
+node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 execute DB --local --config dist/server/wrangler.json --persist-to .wrangler/state --file drizzle/0000_crazy_lester.sql
+node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 execute DB --local --config dist/server/wrangler.json --persist-to .wrangler/state --file drizzle/0001_lyrical_micromax.sql
 npm run dev
 ```
 
-Open `http://127.0.0.1:3000`. The payment bridge is separate and optional for browsing the storefront:
+The portable preview defaults to `http://127.0.0.1:5173`. To choose port 3100, use `npm run dev -- --port 3100 --hostname 127.0.0.1`. Open `/admin/`, sign in with the **local development identity** (`seedy@sites.test`), then set up store management. This identity is simulated only in the development build; it is not a production admin account or password.
 
-```sh
-npm run payments
-```
+Local D1/R2 data in `.wrangler/state` is separate from hosted data and is never packaged. The test quantities, uploaded image and archived QA product created during verification remain local only.
 
-Without configuration, the bridge runs on `http://127.0.0.1:8787` in disabled mode. Its payment operations return `503 PAYMENTS_NOT_READY`. See [PAYMENT_SETUP.md](PAYMENT_SETUP.md) before configuring it.
-
-## Included
-
-- Interactive denim-room homepage, searchable and filterable catalog, product pages, size selection, and fit guide.
-- Native horizontal scrolling, mouse drag, arrow controls, and keyboard-accessible garment previews. The rail uses CSS perspective with image planes; it does not claim a true 360-degree garment model.
-- Shopping bag and saved pieces persisted in the current browser, with input validation when restoring saved data.
-- A four-step checkout preview. Address details stay in memory while the page is mounted; no real order is submitted.
-- Brand story, help, customer account preview, and an illustrative jeans buyback eligibility checker.
-- Responsive layouts, keyboard focus states, native FAQ disclosure controls, accessible labels, and reduced-motion support.
-- A separate payment handoff page, YouPI adapter, authenticated native Node payment bridge, and a durable SQLite payment ledger. These require a trusted order backend and a configured gateway before use.
-
-## Verify and build
+## Verify and publish
 
 ```sh
 npm run check
 npm run build
 ```
 
-`check` runs TypeScript validation and small runnable checks for commerce logic, YouPI contracts and webhook verification, payment-ledger invariants, and API authorization. Gateway responses in these checks are simulated; they are not live gateway certification.
+`check` covers TypeScript, colour-aware commerce rules, inventory transitions and retry safety, payment adapter/ledger/API invariants, owner authorization, conflicting saves, settings validation and upload boundaries. Payment tests use a mock gateway and loopback HTTP, not real funds.
 
-`build` exports the frontend to `out/`. Sites or another static host serves that directory. Static hosting does **not** run `server/payment-api.ts`, store private secrets, or host YouPI. Deploy the payment bridge and gateway separately. Use `npm run dev` for local development; this project has no `npm start` command.
+Optional integration check while the local development server is running:
 
-The only frontend runtime dependencies are Next.js, React, and React DOM. The payment bridge uses native Node HTTP, crypto, and SQLite APIs; it adds no gateway SDK or HTTP framework.
+```sh
+node tests/admin-http.test.mjs http://127.0.0.1:3100
+```
 
-## Where to make changes
+This check refuses non-loopback hosts, creates an archived QA product and a photo locally, and restores the original settings. It checks identity rejection, two colours sharing one size, holds, cancellation, stock sale, bounded returns, repeated requests, a new detail page without rebuild, image round-trip and buyback visibility. It is not a browser interaction test. The browser rail self-check remains in `tests/rail.browser.js`.
+
+The app now uses the supported Sites Vinext/Cloudflare Worker build rather than a static Next export. `dist/` is generated; `.openai/hosting.json` retains the existing Site ID and declares `DB`/`BUCKET`. The Sites publishing workflow provisions hosted storage and applies the schema-only Drizzle migrations. Seed sample records are created only by the authorized setup action. Build dependencies support this hosting/runtime change; no UI library or gateway SDK was added.
+
+Production requires the `WESTOS_OWNER_EMAIL` runtime secret before the initial owner setup. Published admin routes enforce identity on every request; write routes also enforce same-origin requests. Do not proxy to the app with untrusted authenticated-user headers.
+
+`npm start` previews the built Worker locally, without the development sign-in simulation. `npm run dev` is the intended interactive admin preview.
+
+## Payments
+
+The native Node payment bridge remains a **separate service**; the Worker does not run its Node SQLite server. `npm run payments` starts it in disabled mode unless configured. The selected YouPI gateway still needs hosting, merchant setup and the fixes described in [PAYMENT_SETUP.md](PAYMENT_SETUP.md). Saving a UPI ID in the owner desk cannot verify bank ownership or configure that absent gateway.
+
+The checkout is a sample four-step journey. No final trusted order total, tax/shipping calculation or order submission is implemented. Its last button stays disabled. Inventory reservations are implemented separately and have not been connected to customer checkout or payment receipts. The payment handoff accepts only future server-approved orders; no direct UPI payment link or client-side paid flag was added. See [INVENTORY_SETUP.md](INVENTORY_SETUP.md) for the private stock integration contract.
+
+## Source map
 
 | Area | Files |
 | --- | --- |
-| Sample products, prices, fits, images | `lib/catalog.ts` |
-| Cart rules and browser persistence | `lib/cart.ts`, `components/store.tsx` |
-| Main visual system and homepage | `app/globals.css`, `app/room.css`, `app/page.tsx`, `components/denim-room.tsx` |
-| Secondary shopping pages | `components/`, `app/secondary.css` |
-| Story, fit guide, help | `app/story/`, `app/fit-guide/`, `app/help/`, `app/editorial.css` |
-| Payment configuration and setup | `.env.example`, `PAYMENT_SETUP.md` |
-| Payment adapter, API, and ledger | `server/` |
-| Generated imagery and prompts | `public/images/`, `IMAGE_SOURCES.md` |
+| Owner desk and guide | `app/admin/`, `components/admin-panel.tsx`, `ADMIN_GUIDE.md` |
+| Shared products/settings and authorization | `lib/operations.ts`, `server/store-data.ts`, `app/api/` |
+| Storage schema | `db/schema.ts`, `drizzle/` |
+| Stock-aware bag and shared refresh | `lib/cart.ts`, `components/store.tsx` |
+| Initial sample products only | `lib/catalog.ts` |
+| Main showroom | `app/room.css`, `components/denim-room.tsx` |
+| Payment bridge/ledger/adapter | `server/payment-api.ts`, `server/payment-ledger.ts`, `server/youpi.ts` |
+| Generated imagery | `public/images/`, `IMAGE_SOURCES.md` |
 
-Browser storage is a convenience for this preview; it is not an inventory reservation, customer account, price authority, or payment authorization. The payment API accepts amounts only from an authenticated server-side checkout registration.
+After initialization, editing `lib/catalog.ts` does not overwrite the database: use the admin panel. Catalog cards open the product photo page, which shows pictures for the selected colour. Tapping a pair in the Denim Room opens a rotatable front/side/back 3D-style fit illustration in its saved wash and fit. Arrow buttons and the slider also work without dragging. This is an illustration, not a scan of that exact garment; product-accurate photographic 360° viewing still needs real turntable photos or a garment model.
 
-## Work still required for a live store
+## Remaining live-store work
 
-Replace sample catalog data with approved products, real images and size charts, inventory, and final prices. Implement the authenticated customer/order backend, server-calculated GST, shipping and coupon rules, stock reservations, order history, and fulfillment. Confirm delivery/return policies, customer support details, and buyback terms. Admin operations, warehouse management, live notifications, real 3D product assets, and the other platform modules in the source specifications are not implemented here.
+Approve actual products and policies; implement customer/order backend, server-calculated tax/shipping/discounts, order history, fulfillment, customer return/refund workflows and real buyback claims. Connect approved orders and verified payment outcomes to the stock operations. Staff roles, independent admin MFA policy, multi-warehouse movements, order notifications and true 3D product models are outside this inventory phase.
 
-Payment activation additionally depends on repairing and reviewing the identified upstream authentication and webhook-recovery issues, deploying YouPI and the bridge, connecting the trusted order service, and testing reconciliation and fulfillment end to end. See the specific findings and handoff contract in [PAYMENT_SETUP.md](PAYMENT_SETUP.md).
-
-## Source material
-
-The scope originates in `../WESTOS_MASTER_SPECIFICATION.md`, `../WESTOS_MODULE_MAP.md`, `../WESTOS_ARCHITECTURE_DECISIONS.md`, `../WESTOS_IMPLEMENTATION_ROADMAP.md`, and `../WESTOS_OPEN_DECISIONS.md`. Those documents describe the broader platform and unresolved business decisions; this frontend does not resolve them by inventing rules.
-
-The gateway reference is `../youpi-reference` at commit `556bd43`. It was reviewed as source, not deployed. The image prompts and provenance are recorded in [IMAGE_SOURCES.md](IMAGE_SOURCES.md).
-
-The rail's browser self-check is in tests/rail.browser.js. Open the homepage and run it in the browser console to check filtering, modal focus, size selection, and reopening without changing the bag. The normal browser cursor is preserved; no mouse-following decorative cursor is implemented. The local Next development indicator is disabled.
-
+Original scope: the five `WESTOS_*.md` documents in the parent directory. YouPI source reviewed at `../youpi-reference`, commit `556bd43`; it was not deployed or modified. See the gateway setup findings before accepting money.

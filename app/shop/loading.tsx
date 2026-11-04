@@ -1,0 +1,1 @@
+export default function ShopLoading(){return <div className="container catalog-page"><div className="page-heading"><p className="eyebrow">GOOD DENIM STARTS HERE</p><h1>Denim for your everyday.</h1><p>Different fits. Different washes. All kinds of you.</p></div><div className="loading-page" role="status">Finding your next favourite…</div></div>;}

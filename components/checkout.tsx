@@ -4,14 +4,14 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import { useStore } from '@/components/store';
-import { products, formatPrice } from '@/lib/catalog';
+import { formatPrice } from '@/lib/catalog';
 import { cartTotal } from '@/lib/cart';
 
 const steps = ['Address', 'Shipping', 'Payment', 'Review'];
 const emptyAddress = { name: '', email: '', phone: '', street: '', city: '', state: '', pincode: '' };
 
 export default function Checkout() {
-  const { cart, ready } = useStore();
+  const { cart, ready, products, settings } = useStore();
   const [step, setStep] = useState(0);
   // ponytail: address stays in this mounted preview only; real checkout needs an authenticated server session.
   const [address, setAddress] = useState(emptyAddress);
@@ -73,10 +73,10 @@ export default function Checkout() {
         </div>
       </section>
       <aside className="checkout-summary" aria-label="Order summary"><div className="checkout-summary-heading"><h2>In your bag</h2><Link href="/cart" className="text-link">Edit</Link></div>
-        <div className="checkout-items">{cart.map((item) => { const product = products.find((entry) => entry.id === item.productId); return product && <div className="checkout-item" key={`${item.productId}-${item.size}`}><div className="checkout-item-image"><Image src={product.image} alt={product.name} fill sizes="72px" /></div><div><h3>{product.name}</h3><p>{product.color} · Size {item.size}</p><p>Qty {item.quantity}</p></div><strong>{formatPrice(product.price * item.quantity)}</strong></div>; })}</div>
-        <dl className="checkout-totals"><div><dt>Products subtotal</dt><dd>{formatPrice(cartTotal(cart))}</dd></div><div><dt>Shipping</dt><dd>To be confirmed</dd></div><div><dt>Tax calculation</dt><dd>To be confirmed</dd></div><div className="checkout-total-pending"><dt>Final total</dt><dd>Available at launch</dd></div></dl>
+        <div className="checkout-items">{cart.map(item=>{const product=products.find(entry=>entry.id===item.productId),variant=product?.variants.find(entry=>entry.id===item.variantId),color=product?.colors.find(entry=>entry.id===variant?.colorId);return product&&variant&&color&&<div className="checkout-item" key={item.variantId}><div className="checkout-item-image"><Image src={color.images[0]??product.image} alt={`${product.name} in ${color.name}`} fill sizes="72px"/></div><div><h3>{product.name}</h3><p>{color.name} · Size {variant.size}</p><p className="variant-reference">SKU {variant.sku}</p><p>Qty {item.quantity}</p></div><strong>{formatPrice(product.price*item.quantity)}</strong></div>;})}</div>
+        <dl className="checkout-totals"><div><dt>Products subtotal</dt><dd>{formatPrice(cartTotal(cart,products))}</dd></div><div><dt>Shipping</dt><dd>To be confirmed</dd></div><div><dt>Tax calculation</dt><dd>To be confirmed</dd></div><div className="checkout-total-pending"><dt>Final total</dt><dd>Available at launch</dd></div></dl>
         <p className="checkout-smallprint">Sample catalogue pricing. No reservation or purchase is made during the preview.</p>
-        <div className="checkout-buyback-note"><p className="eyebrow">A NEW CHAPTER FOR YOUR DENIM</p><p>Your next pair could start with your old one.</p><Link href="/buyback" className="text-link">Explore Westos Buyback ↗</Link></div>
+        {settings.buybackEnabled&&<div className="checkout-buyback-note"><p className="eyebrow">A NEW CHAPTER FOR YOUR DENIM</p><p>Your next pair could start with your old one.</p><Link href="/buyback" className="text-link">Explore Westos Buyback ↗</Link></div>}
       </aside>
     </div>
   </div>;

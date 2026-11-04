@@ -1,0 +1,54 @@
+import assert from 'node:assert/strict';
+import {assertOwner, previewProducts, StoreError, validateProduct, validateProductEdit, validateSettings} from '../lib/operations.ts';
+import {readMutation} from '../server/store-data.ts';
+import {assertInternalInventory} from '../server/inventory.ts';
+
+const owner = {userId: 'owner-stable-id', email: 'owner@example.com'};
+const other = {userId: 'other-id', email: 'other@example.com'};
+const status = (code: number) => (error: unknown) => error instanceof StoreError && error.status === code;
+
+assert.throws(() => assertOwner(null, null, owner.email), status(401));
+assert.throws(() => assertOwner(other, null, owner.email), status(403));
+assert.throws(() => assertOwner(owner, null, ''), status(403));
+assert.equal(assertOwner(owner, {userId: owner.userId}, 'changed@example.com').userId, owner.userId);
+assert.throws(() => assertOwner({...owner, userId: 'replacement-id'}, {userId: owner.userId}, owner.email), status(403));
+assert.throws(() => validateSettings({upiId: 'bad address', buybackEnabled: false}), status(400));
+assert.throws(() => validateSettings({upiId: 'vijay@upi', buybackEnabled: 'true'}), status(400));
+assert.deepEqual(validateSettings({upiId: 'vijay@upi', buybackEnabled: false}), {upiId: 'vijay@upi', buybackEnabled: false});
+
+const sample = previewProducts()[0];
+assert.equal(validateProduct(sample).colors[0].id, 'default');
+assert.throws(() => validateProduct({...sample, price: -1}), status(400));
+assert.throws(() => validateProduct({...sample, variants: sample.variants.map((v, i) => i ? v : {...v, onHand: -1})}), status(400));
+assert.throws(() => validateProduct({...sample, variants: [sample.variants[0], sample.variants[0]]}), status(400));
+assert.throws(() => validateProduct({...sample, variants: sample.variants.map(v => ({...v, sku: 'DUPLICATE'}))}), status(400));
+assert.throws(() => validateProduct({...sample, colors: [...sample.colors, sample.colors[0]]}), status(400));
+assert.throws(() => validateProduct({...sample, colors: [{...sample.colors[0], images: ['https://elsewhere.example/image.jpg']}]}), status(400));
+assert.throws(() => validateProduct({...sample, colors: [{...sample.colors[0], images: ['/api/media/../file.jpg']}]}), status(400));
+assert.throws(() => validateProduct({...sample, variants: [{...sample.variants[0], colorId: 'unknown'}]}), status(400));
+assert.throws(() => validateProduct({...sample, variants: [{...sample.variants[0], id: 'wrong-identity'}]}), status(400));
+assert.throws(() => validateProduct({...sample, variants: [{...sample.variants[0], size: 28.5}]}), status(400));
+assert.throws(() => validateProductEdit({...sample, variants: sample.variants.map(v => ({...v, onHand: 1}))}, null, 0), status(400));
+assert.throws(() => validateProductEdit({...sample, slug: 'changed'}, sample, 0), status(400));
+assert.throws(() => validateProductEdit({...sample, variants: sample.variants.map(v => ({...v, sku: `${v.sku}-CHANGED`}))}, sample, 0), status(400));
+assert.throws(() => validateProductEdit(sample, {...sample, revision: 2}, 1), status(409));
+
+const mutation = (body: string, origin = 'https://store.example', type = 'application/json') => new Request('https://store.example/api/admin', {method: 'POST', headers: {'content-type': type, origin}, body});
+await assert.rejects(readMutation(mutation('{}', 'https://other.example')), status(403));
+await assert.rejects(readMutation(mutation('{')), status(400));
+await assert.rejects(readMutation(mutation('[]')), status(400));
+await assert.rejects(readMutation(mutation('{}', 'https://store.example', 'text/plain')), status(415));
+await assert.rejects(readMutation(mutation(JSON.stringify({text: 'x'.repeat(131073)}))), status(413));
+assert.deepEqual(await readMutation(mutation('{"action":"initialize"}')), {action: 'initialize'});
+const privateKey = 'inventory-test-only-key-that-is-long-enough';
+const internalRequest = (headers: Record<string, string> = {}) => new Request('https://store.example/api/internal/inventory', {method: 'POST', headers});
+assert.throws(() => assertInternalInventory(internalRequest(), undefined), status(503));
+assert.throws(() => assertInternalInventory(internalRequest(), 'too-short'), status(503));
+assert.throws(() => assertInternalInventory(internalRequest(), privateKey), status(401));
+assert.throws(() => assertInternalInventory(internalRequest({authorization: privateKey}), privateKey), status(401));
+assert.throws(() => assertInternalInventory(internalRequest({authorization: `Basic ${privateKey}`}), privateKey), status(401));
+assert.throws(() => assertInternalInventory(internalRequest({authorization: `Bearer ${privateKey.slice(0, -1)}X`}), privateKey), status(401));
+assert.throws(() => assertInternalInventory(internalRequest({authorization: `Bearer ${privateKey}`, origin: 'https://store.example'}), privateKey), status(403));
+assert.throws(() => assertInternalInventory(internalRequest({authorization: `Bearer ${privateKey}`, 'sec-fetch-site': 'same-origin'}), privateKey), status(403));
+assert.doesNotThrow(() => assertInternalInventory(internalRequest({authorization: `Bearer ${privateKey}`}), privateKey));
+console.log('Store boundaries: owner identity, product colours/SKUs, settings, JSON validation and bounded request checks passed.');

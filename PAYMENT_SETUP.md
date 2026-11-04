@@ -5,7 +5,7 @@ The WESTOS payment integration is prepared for the gateway source in `../youpi-r
 ## Deployment shape
 
 ```text
-Static WESTOS frontend (Sites / out/)
+WESTOS storefront + owner admin (Sites Worker, D1 + R2)
   -> separate WESTOS payment bridge (native Node HTTP + SQLite)
   -> your hosted YouPI API and checkout portal
 
@@ -14,13 +14,17 @@ YouPI signed webhook -> payment bridge -> durable payment ledger
 Future order/fulfillment consumer <- verified ledger outcome
 ```
 
-Sites hosts the frontend only. A static site cannot keep merchant secrets or run this bridge. Use Node.js **24.22.1 or later** for the deployment; this is also the reviewed upstream gateway's declared minimum. Host the gateway separately using its installation/deployment documentation after addressing the findings below.
+Sites hosts the storefront and owner admin server with D1/R2. The native Node/SQLite payment bridge remains a separate service and is not bundled into the Worker. Use Node.js **24.22.1 or later** for the deployment; this is also the reviewed upstream gateway's declared minimum. Host the gateway separately using its installation/deployment documentation after addressing the findings below.
 
 The storefront checkout is still a sample journey. It does not calculate a trusted final total, reserve stock, register an order, or start payment. A trusted WESTOS order backend must implement those steps before it can give a customer an approved payment handoff.
 
+## Receiving UPI setting
+
+The owner admin stores the intended receiving UPI, initially **vijay@upi**, under Settings → Receiving UPI. Changes persist in D1, but do not call the gateway, alter its active receiving account, enable payments or verify bank ownership. When YouPI is hosted, configure the dedicated merchant's matching receiving account through the gateway administration tools. Avoid replacing an account while it has in-flight payment sessions. The gateway's active merchant account, not the storefront setting, determines the actual payment destination.
+
 ## Configuration
 
-Copy `.env.example` to `.env.local` in this folder and supply real deployment values when ready. `.env.local` is ignored by Git. Do not put secrets in `NEXT_PUBLIC_` variables, browser code, the static export, or a chat message.
+Copy `.env.example` to `.env.local` in this folder and supply real deployment values when ready. `.env.local` is ignored by Git. Do not put secrets in `NEXT_PUBLIC_` variables, browser code, public build output, or a chat message.
 
 | Variable | Purpose |
 | --- | --- |
@@ -122,6 +126,7 @@ The WESTOS bridge's stricter receipt rules do not repair the upstream gateway. K
 - Deploy and configure the gateway, its checkout portal, dedicated merchant, receiving account, observer setup, and the HTTPS bridge. Confirm the upstream project's license and deployment requirements.
 - Build the trusted order service and use its final amount and stock reservation to register checkout approvals. The sample storefront cannot supply this trust boundary.
 - Add an idempotent order/fulfillment consumer or transactional outbox. The bridge records payment outcomes; it does not automatically fulfill an order, release stock, send notifications, or issue refunds.
+- The single-store inventory service now supports holds, cancellation, stock sale and inspected returns (see `INVENTORY_SETUP.md`). It is not wired to this bridge. Use stable request IDs when a future order consumer calls it. If a verified payment arrives after its hold expires, do not force a stock deduction: attempt a fresh hold and send unavailable orders to fulfillment/refund review. Stock-sale status is not payment confirmation; restocking a physical return does not issue a refund.
 - Keep one bridge process for the current SQLite/request-coalescing design. Multiple replicas require a shared durable coordination/lease strategy. Each approval allows one gateway attempt; a different attempt needs a new order ID and an order-service retry policy.
 - Test signed webhooks, exact amount/identity rejection, reconciliation, cancellation, expiry, restart recovery, duplicate delivery, manual-review handling, and missing/late notifications with the repaired hosted gateway. The local runnable checks use simulated responses and do not establish live readiness.
 

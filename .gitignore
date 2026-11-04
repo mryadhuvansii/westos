@@ -9,3 +9,10 @@ out/
 .local/
 *.sqlite*
 assets/originals/
+
+dist/
+.vinext/
+.wrangler/
+.sites-runtime/
+.dev.vars*
+outputs/

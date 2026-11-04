@@ -1,11 +1,13 @@
 'use client';
 import {useSearchParams} from 'next/navigation';
 import {useState} from 'react';
-import {products,filterProducts} from '@/lib/catalog';
+import {filterProducts} from '@/lib/catalog';
+import {useStore} from './store';
 import ProductCard from './product-card';
 import {Icon} from './icon';
 const fits=['Straight','Slim','Relaxed','Baggy','Bootcut','Comfort'];
 export default function Catalog(){
+ const {products}=useStore();
  const params=useSearchParams();const query=params.get('q')||'',category=params.get('category')||'',fit=params.get('fit')||'',sort=params.get('sort')||'featured',collection=params.get('collection')||'';const [page,setPage]=useState(1);
  const filtered=filterProducts(products,{query,category,fit,sort}).filter(p=>!collection||p.collection===collection);const pageCount=Math.ceil(filtered.length/6);const currentPage=Math.max(1,Math.min(page,pageCount));
  function filter(key:string,value:string){const next=new URLSearchParams(window.location.search);if(value&&!(key==='fit'&&next.get(key)===value))next.set(key,value);else next.delete(key);window.history.replaceState(null,'',`/shop/?${next}`);setPage(1);}
