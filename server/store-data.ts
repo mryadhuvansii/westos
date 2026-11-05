@@ -200,7 +200,7 @@ export async function mutateStore(db: D1Database, identity: Identity, input: Rec
   } else if(['reserveStock','commitStock','releaseStock','returnStock'].includes(String(input.action))) {
     await inventoryMutation(db,identity,input);
   } else if (input.action === 'saveSettings') {
-    fields(input, ['action','upiId','buybackEnabled','expectedRevision']);
+    fields(input, ['action','upiId','buybackEnabled','codEnabled','expectedRevision']);
     await saveSettings(db, identity, validateSettings(input), integer(input.expectedRevision, 'Revision'));
   } else throw new StoreError(400, 'Choose a supported store action.');
   return readAdmin(db, identity);

@@ -56,7 +56,7 @@ assert(state.products.every(product => product.variants.every(variant => variant
 assert.equal((await adminContext(db, request(), owner.email)).initialized, true);
 await assert.rejects(adminContext(db, request({...owner, userId: 'replacement'}), owner.email), status(403));
 await assert.rejects(mutateStore(db, other, {action: 'initialize'}), status(403));
-await assert.rejects(mutateStore(db, other, {action: 'saveSettings', upiId: 'other@upi', buybackEnabled: true, expectedRevision: 1}), status(403));
+await assert.rejects(mutateStore(db, other, {action: 'saveSettings', upiId: 'other@upi', buybackEnabled: true, codEnabled: false, expectedRevision: 1}), status(403));
 
 const sample = previewProducts()[0];
 const id = 'inventory-check';
@@ -175,7 +175,7 @@ await assert.rejects(mutate({...reserve, reference: 'ARCHIVED', requestId: uuid(
 assert.equal((await readStore(db)).products.some(product => product.id === id), false);
 
 state = await readAdmin(db, owner);
-const settingsAction = {action: 'saveSettings', upiId: 'updated@bank', buybackEnabled: true, expectedRevision: state.settings.revision};
+const settingsAction = {action: 'saveSettings', upiId: 'updated@bank', buybackEnabled: true, codEnabled: false, expectedRevision: state.settings.revision};
 await mutate(settingsAction);
 await assert.rejects(mutate(settingsAction), status(409));
 await assert.rejects(mutate({...settingsAction, paymentsEnabled: true}), status(400));

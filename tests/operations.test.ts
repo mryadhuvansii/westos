@@ -12,9 +12,9 @@ assert.throws(() => assertOwner(other, null, owner.email), status(403));
 assert.throws(() => assertOwner(owner, null, ''), status(403));
 assert.equal(assertOwner(owner, {userId: owner.userId}, 'changed@example.com').userId, owner.userId);
 assert.throws(() => assertOwner({...owner, userId: 'replacement-id'}, {userId: owner.userId}, owner.email), status(403));
-assert.throws(() => validateSettings({upiId: 'bad address', buybackEnabled: false}), status(400));
-assert.throws(() => validateSettings({upiId: 'vijay@upi', buybackEnabled: 'true'}), status(400));
-assert.deepEqual(validateSettings({upiId: 'vijay@upi', buybackEnabled: false}), {upiId: 'vijay@upi', buybackEnabled: false});
+assert.throws(() => validateSettings({upiId: 'bad address', buybackEnabled: false, codEnabled: false}), status(400));
+assert.throws(() => validateSettings({upiId: 'vijay@upi', buybackEnabled: 'true', codEnabled: false}), status(400));
+assert.deepEqual(validateSettings({upiId: 'vijay@upi', buybackEnabled: false, codEnabled: false}), {upiId: 'vijay@upi', buybackEnabled: false, codEnabled: false});
 
 const sample = previewProducts()[0];
 assert.equal(validateProduct(sample).colors[0].id, 'default');

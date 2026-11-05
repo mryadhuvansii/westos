@@ -105,10 +105,10 @@ try {
   assert.equal(storedPhoto.status,200);
   assert.equal(storedPhoto.headers.get('content-type'),'image/webp');
   assert.deepEqual(Buffer.from(await storedPhoto.arrayBuffer()),photo);
-  state = await change({action:'saveSettings',upiId:'qa@upi',buybackEnabled:true,expectedRevision:state.settings.revision});
+  state = await change({action:'saveSettings',upiId:'qa@upi',buybackEnabled:true,codEnabled:false,expectedRevision:state.settings.revision});
   assert.equal((await (await read('/api/store',false)).json()).settings.upiId,'qa@upi');
   assert((await (await read('/buyback/',false)).text()).includes('id="eligibility"'));
-  state = await change({action:'saveSettings',upiId:'qa@upi',buybackEnabled:false,expectedRevision:state.settings.revision});
+  state = await change({action:'saveSettings',upiId:'qa@upi',buybackEnabled:false,codEnabled:false,expectedRevision:state.settings.revision});
   const paused = await (await read('/buyback/',false)).text();
   assert(paused.includes('Buyback is currently unavailable.'));
   assert(!paused.includes('<section class="buyback-checker"'), 'The paused checker must not render.');
@@ -118,7 +118,7 @@ try {
     const current = state.products.find(value => value.id === id);
     if(current) state = await change({action:'saveProduct',product:{...current,status:'archived'},expectedRevision:current.revision});
   }
-  await change({action:'saveSettings',upiId:originalSettings.upiId,buybackEnabled:originalSettings.buybackEnabled,expectedRevision:state.settings.revision});
+  await change({action:'saveSettings',upiId:originalSettings.upiId,buybackEnabled:originalSettings.buybackEnabled,codEnabled:originalSettings.codEnabled,expectedRevision:state.settings.revision});
 }
 assert.equal((await read(`/product/${id}/`,false)).status,404);
 console.log('Local admin HTTP checks passed: owner access, colour-size stock, holds, cancellation, stock sale, bounded returns, retries, new product page, image upload and settings. Original settings restored.');
