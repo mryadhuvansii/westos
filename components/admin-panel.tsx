@@ -7,7 +7,7 @@ import {formatPrice} from '@/lib/catalog';
 import {compatibilityFields, legacyProduct, variantId, type AdminState, type ManagedProduct, type StoreSettings, type ProductColor} from '@/lib/operations';
 import InventoryDesk from './inventory-desk';
 
-const sections = ['Products', 'Inventory', 'Settings', 'Activity', 'Guide'] as const;
+const sections = ['Dashboard', 'Orders', 'Returns', 'Inventory', 'Products', 'Settings', 'Activity', 'Guide'] as const;
 type Section = typeof sections[number];
 type Feedback = {error: boolean; message: string};
 const activityNames: Record<string, string> = {initialize: 'Store management set up', product_created: 'Product added', product_updated: 'Product updated', stock_adjusted: 'Stock counted', inventory_upgraded: 'Colour-size inventory enabled', stock_reserved: 'Stock reserved', stock_committed: 'Stock sale recorded', stock_released: 'Stock hold released', stock_returned: 'Inspected stock returned', settings: 'Settings updated'};
@@ -25,7 +25,7 @@ async function readResponse(response: Response): Promise<AdminState> {
 
 export default function AdminPanel() {
   const [data, setData] = useState<AdminState | null>(null);
-  const [section, setSection] = useState<Section>('Products');
+  const [section, setSection] = useState<Section>('Dashboard');
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
@@ -37,6 +37,19 @@ export default function AdminPanel() {
   const [inventoryDirty, setInventoryDirty] = useState(false);
   const [inventoryReset, setInventoryReset] = useState(0);
   const [referenceQuery, setReferenceQuery] = useState('');
+  const [orders, setOrders] = useState<{id:string; orderNumber:string; customerEmail:string; status:string; subtotal:number; tax:number; shipping:number; total:number; currency:string; paymentStatus:string; items:number; createdAt:string}[]>([]);
+  const [dashboard, setDashboard] = useState<{sales:{totalOrders:number; totalRevenue:number; pendingOrders:number}; returns:{totalReturns:number; pendingReturns:number; returnRate:number}; stock:{available:number; reserved:number}} | null>(null);
+  const [topSelling, setTopSelling] = useState<{product_name:string; color_name:string; size:number; total_qty:number; total_revenue:number}[]>([]);
+  const [topSizes, setTopSizes] = useState<{size:number; total_qty:number}[]>([]);
+  const [topColors, setTopColors] = useState<{color_name:string; total_qty:number}[]>([]);
+  const [stockMovements, setStockMovements] = useState<{id:string; variant_id:string; type:string; quantity:number; reason:string; reference:string|null; created_at:string; sku:string; size:number; color_id:string}[]>([]);
+  const [orderDetail, setOrderDetail] = useState<any>(null);
+  const [returnsList, setReturnsList] = useState<{id:string; return_number:string; order_id:string; customer_id:string; status:string; reason:string; created_at:string; updated_at:string}[]>([]);
+  const [orderDetailModalOpen, setOrderDetailModalOpen] = useState(false);
+  const [returnCreateModalOpen, setReturnCreateModalOpen] = useState(false);
+  const [returnCreationOrder, setReturnCreationOrder] = useState<any>(null);
+  const [selectedReturnItems, setSelectedReturnItems] = useState<{orderItemId: string; quantity: number}[]>([]);
+  const [returnReason, setReturnReason] = useState('');
   const adminUrl = referenceQuery ? `/api/admin?reference=${encodeURIComponent(referenceQuery)}` : '/api/admin';
   const dialog = useRef<HTMLDialogElement>(null);
   const feedbackRef = useRef<HTMLDivElement>(null);
@@ -47,6 +60,18 @@ export default function AdminPanel() {
     fetch('/api/admin', {cache: 'no-store', signal: controller.signal})
       .then(readResponse).then(next => {setData(next); setSettings(next.settings);})
       .catch(error => {if (!controller.signal.aborted) setFeedback({error: true, message: error instanceof Error ? error.message : 'Store management could not be loaded.'});});
+    fetch('/api/admin/orders', {cache: 'no-store', signal: controller.signal})
+      .then(async r => {if (!r.ok) return null; return r.json();})
+      .then(json => {if (json?.orders) setOrders(json.orders);});
+    fetch('/api/admin/dashboard', {cache: 'no-store', signal: controller.signal})
+      .then(async r => {if (!r.ok) return null; return r.json();})
+      .then(json => {if (json?.sales) setDashboard(json);});
+    fetch('/api/admin/stock-movement', {cache: 'no-store', signal: controller.signal})
+      .then(async r => {if (!r.ok) return null; return r.json();})
+      .then(json => {if (json?.movements) setStockMovements(json.movements);});
+    fetch('/api/admin/returns', {cache: 'no-store', signal: controller.signal})
+      .then(async r => {if (!r.ok) return null; return r.json();})
+      .then(json => {if (json?.returns) setReturnsList(json.returns);});
     return () => controller.abort();
   }, []);
 
@@ -110,6 +135,98 @@ export default function AdminPanel() {
       return next;
     } catch (error) {setFeedback({error: true, message: error instanceof Error ? error.message : 'Your change could not be saved. Please retry.'}); return null;}
     finally {busyRef.current = false; setBusy(false);}
+  }
+
+  async function updateOrderStatus(orderId: string, status: string) {
+    if (busyRef.current) return;
+    busyRef.current = true; setBusy(true);
+    try {
+      const res = await fetch('/api/admin/orders', {method: 'PATCH', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({orderId, status})});
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Could not update order status.');
+      setOrders(current => current.map(order => order.id === orderId ? {...order, status} : order));
+      setFeedback({error: false, message: `Order ${orderId} status updated to ${status}.`});
+    } catch (error) {setFeedback({error: true, message: error instanceof Error ? error.message : 'Could not update order status.'});}
+    finally {busyRef.current = false; setBusy(false);}
+  }
+
+  async function updateReturnStatus(returnId: string, status: string) {
+    if (busyRef.current) return;
+    busyRef.current = true; setBusy(true);
+    try {
+      const res = await fetch('/api/admin/returns/' + returnId, {method: 'PATCH', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({status})});
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Could not update return status.');
+      setReturnsList(current => current.map(ret => ret.id === returnId ? {...ret, status} : ret));
+      if (status === 'completed') {
+        setFeedback({error: false, message: `Return ${returnId} completed. Buyback credit eligible for returned jeans.`});
+      } else {
+        setFeedback({error: false, message: `Return ${returnId} status updated to ${status}.`});
+      }
+    } catch (error) {setFeedback({error: true, message: error instanceof Error ? error.message : 'Could not update return status.'});}
+    finally {busyRef.current = false; setBusy(false);}
+  }
+
+  async function openOrderDetail(orderId: string) {
+    setBusy(true);
+    try {
+      const res = await fetch('/api/admin/orders/' + orderId, {cache: 'no-store'});
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Could not load order detail.');
+      setOrderDetail(json.order);
+      setOrderDetailModalOpen(true);
+    } catch (error) {
+      setFeedback({error: true, message: error instanceof Error ? error.message : 'Could not load order detail.'});
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function toggleReturnItem(orderItemId: string, maxQty: number) {
+    setSelectedReturnItems(current => {
+      const existing = current.find(item => item.orderItemId === orderItemId);
+      if (existing) {
+        const next = current.map(item => item.orderItemId === orderItemId ? {...item, quantity: item.quantity + 1} : item);
+        return next.filter(item => item.quantity > 0);
+      }
+      return [...current, {orderItemId, quantity: 1}];
+    });
+  }
+
+  function updateReturnItemQuantity(orderItemId: string, qty: number) {
+    setSelectedReturnItems(current => current.map(item => item.orderItemId === orderItemId ? {...item, quantity: Math.max(0, qty)} : item).filter(item => item.quantity > 0));
+  }
+
+  async function createReturn() {
+    if (!returnCreationOrder || !returnReason.trim()) return;
+    if (selectedReturnItems.length === 0) {setFeedback({error: true, message: 'Select at least one item to return.'}); return;}
+    setBusy(true);
+    try {
+      const res = await fetch('/api/returns', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          orderId: returnCreationOrder.id,
+          items: selectedReturnItems.map(item => ({orderItemId: item.orderItemId, quantity: item.quantity})),
+          reason: returnReason.trim(),
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Return creation failed.');
+      setFeedback({error: false, message: `Return ${json.returnNumber} created successfully.`});
+      setReturnCreateModalOpen(false);
+      setReturnCreationOrder(null);
+      setSelectedReturnItems([]);
+      setReturnReason('');
+      // Refresh returns list
+      const res2 = await fetch('/api/admin/returns', {cache: 'no-store'});
+      const json2 = await res2.json();
+      if (json2?.returns) setReturnsList(json2.returns);
+    } catch (error) {
+      setFeedback({error: true, message: error instanceof Error ? error.message : 'Return creation failed.'});
+    } finally {
+      setBusy(false);
+    }
   }
 
   function openEditor(product?: ManagedProduct) {
@@ -188,11 +305,24 @@ export default function AdminPanel() {
       <div className="admin-topbar"><span>{data?.user.email || 'Owner workspace'}</span><a href="/signout-with-chatgpt?return_to=%2Fadmin%2F" target="_top">Sign out ↗</a></div>
       <header className="admin-page-title"><div><p className="eyebrow">YOUR DAILY STORE DESK</p><h1>Everything in order.</h1><p>Apne products, stock aur store settings yahan manage karein.</p></div><button className="admin-button secondary" disabled={busy} onClick={reload}>{inventoryDirty || settings && data && (settings.upiId !== data.settings.upiId || settings.buybackEnabled !== data.settings.buybackEnabled) ? 'Discard edits & reload' : 'Reload saved values'} <Icon name="recycle" size={17} /></button></header>
       {!editing && notice}
-      {!data ? <div className="admin-card admin-loading"><p>{feedback?.error ? 'Owner access is required to open store management.' : 'Loading your store…'}</p>{feedback?.error && <a className="admin-button" href="/signin-with-chatgpt?return_to=%2Fadmin%2F" target="_top">Sign in again ↗</a>}</div> : data.needsSetup ? <section className="admin-card admin-setup"><p className="eyebrow">ONE SIMPLE START</p><h2>Set up your store desk.</h2><p>This creates your shared product, inventory and settings records and connects this owner account. The eight sample products start with <strong>zero stock</strong>; enter your actual quantities before using the inventory.</p><p>Receiving UPI: <strong>vijay@upi</strong> · Buyback page: <strong>Off</strong> · Payments: <strong>Not active</strong></p><button className="admin-button" disabled={busy} onClick={async () => {const next = await save({action: 'initialize'}, 'Store management is ready. Add real product details and counted stock.'); if (next) setSettings(next.settings);}}>{busy ? 'Setting up…' : 'Set up store management'} <Icon name="arrow" size={17} /></button></section> : <>
-        <div className="admin-metrics" aria-label="Store overview"><div><span>Published products</span><strong>{data.products.filter(product => product.status === 'published').length.toString().padStart(2, '0')}</strong><small>{data.products.length} products in your catalogue</small></div><div><span>Stock on hand</span><strong>{stockCount.toLocaleString('en-IN')}</strong><small>Counted units across colours and sizes</small></div><div><span>Receiving UPI</span><strong className="admin-metric-upi">{data.settings.upiId}</strong><small>Saved · gateway setup pending</small></div><div><span>Buyback page</span><strong>{data.settings.buybackEnabled ? 'On' : 'Off'}</strong><small>Information only · no claims</small></div></div>
+      {!data ? <div className="admin-card admin-loading"><p>{feedback?.error ? 'Owner access is required to open store management.' : 'Loading your store…'}</p>{feedback?.error && <a className="admin-button" href="/signin-with-chatgpt?return_to=%2Fadmin%2F" target="_top">Sign in again ↗</a>}</div> : data.needsSetup ? <section className="admin-card admin-setup"><p className="eyebrow">ONE SIMPLE START</p><h2>Set up your store desk.</h2><p>This creates your shared product, inventory and settings records and connects this owner account. The eight sample products start with <strong>zero stock</strong>; enter your actual quantities before using the inventory.</p><p>Receiving UPI: <strong>vijay@upi</strong> · Buyback page: <strong>Off</strong> · COD: <strong>Off</strong> · Payments: <strong>Not active</strong></p><button className="admin-button" disabled={busy} onClick={async () => {const next = await save({action: 'initialize'}, 'Store management is ready. Add real product details and counted stock.'); if (next) setSettings(next.settings);}}>{busy ? 'Setting up…' : 'Set up store management'} <Icon name="arrow" size={17} /></button></section> : <>
+        <div className="admin-metrics" aria-label="Store overview"><div><span>Published products</span><strong>{data.products.filter(product => product.status === 'published').length.toString().padStart(2, '0')}</strong><small>{data.products.length} products in your catalogue</small></div><div><span>Stock on hand</span><strong>{stockCount.toLocaleString('en-IN')}</strong><small>Counted units across colours and sizes</small></div><div><span>Receiving UPI</span><strong className="admin-metric-upi">{data.settings.upiId}</strong><small>Saved · gateway setup pending</small></div><div><span>Buyback page</span><strong>{data.settings.buybackEnabled ? 'On' : 'Off'}</strong><small>Information only · no claims</small></div><div><span>Cash on Delivery</span><strong>{data.settings.codEnabled ? 'On' : 'Off'}</strong><small>Payment option at checkout</small></div></div>
 
         <section className="admin-workspace" aria-labelledby="admin-section-title">
           <div className="admin-section-heading"><div><p className="eyebrow">0{sections.indexOf(section) + 1} / STORE MANAGEMENT</p><h2 id="admin-section-title" ref={sectionHeading} tabIndex={-1}>{section}</h2></div>{section === 'Products' && <button className="admin-button" disabled={busy || !data.inventoryReady} onClick={() => openEditor()}><Icon name="plus" size={18} /> Add product</button>}</div>
+
+          {section === 'Dashboard' && <div className="admin-dashboard">
+            <div className="admin-metric-grid">
+              <div className="admin-metric-card"><div className="admin-metric-label">Total Revenue</div><div className="admin-metric-value">₹{(dashboard?.sales.totalRevenue ?? 0).toLocaleString('en-IN')}</div><div className="admin-metric-sub">{dashboard?.sales.totalOrders ?? 0} orders</div></div>
+              <div className="admin-metric-card"><div className="admin-metric-label">Total Orders</div><div className="admin-metric-value">{dashboard?.sales.totalOrders ?? 0}</div><div className="admin-metric-sub">{dashboard?.sales.pendingOrders ?? 0} pending</div></div>
+              <div className="admin-metric-card"><div className="admin-metric-label">Returns</div><div className="admin-metric-value">{dashboard?.returns.totalReturns ?? 0}</div><div className="admin-metric-sub">{dashboard?.returns.returnRate ?? 0}% return rate</div></div>
+              <div className="admin-metric-card"><div className="admin-metric-label">Stock Available</div><div className="admin-metric-value">{dashboard?.stock.available ?? 0}</div><div className="admin-metric-sub">{dashboard?.stock.reserved ?? 0} reserved</div></div>
+            </div>
+            <div className="admin-dashboard-section"><h3>Top Selling Products</h3><table className="admin-table"><thead><tr><th>Product</th><th>Color</th><th>Size</th><th>Qty Sold</th><th>Revenue</th></tr></thead><tbody>{topSelling.map(item => <tr key={item.product_name + '-' + item.color_name + '-' + item.size}><td>{item.product_name}</td><td>{item.color_name}</td><td>{item.size}</td><td>{item.total_qty}</td><td>₹{item.total_revenue.toLocaleString('en-IN')}</td></tr>)}{!topSelling.length && <tr><td colSpan={5}>No sales data yet.</td></tr>}</tbody></table></div>
+            <div className="admin-dashboard-section"><h3>Top Selling Sizes</h3><table className="admin-table"><thead><tr><th>Size</th><th>Qty Sold</th></tr></thead><tbody>{topSizes.map(item => <tr key={item.size}><td>{item.size}</td><td>{item.total_qty}</td></tr>)}{!topSizes.length && <tr><td colSpan={2}>No data yet.</td></tr>}</tbody></table></div>
+            <div className="admin-dashboard-section"><h3>Top Selling Colors</h3><table className="admin-table"><thead><tr><th>Color</th><th>Qty Sold</th></tr></thead><tbody>{topColors.map(item => <tr key={item.color_name}><td>{item.color_name}</td><td>{item.total_qty}</td></tr>)}{!topColors.length && <tr><td colSpan={2}>No data yet.</td></tr>}</tbody></table></div>
+            <div className="admin-dashboard-section"><h3>Stock Movement</h3><table className="admin-table"><thead><tr><th>Time</th><th>SKU</th><th>Type</th><th>Qty</th><th>Reason</th></tr></thead><tbody>{stockMovements.map(mov => <tr key={mov.id}><td>{new Date(mov.created_at).toLocaleDateString('en-IN')}</td><td>{mov.sku}</td><td>{mov.type}</td><td>{mov.quantity}</td><td>{mov.reason}</td></tr>)}{!stockMovements.length && <tr><td colSpan={5}>No stock movement yet.</td></tr>}</tbody></table></div>
+          </div>}
 
           {section === 'Products' && <>
             <div className="admin-filters"><label className="admin-search"><Icon name="search" size={18} /><input aria-label="Search products" type="search" placeholder="Search by name, fit or wash" value={query} onChange={event => setQuery(event.target.value)} /></label><label>Status<select value={status} onChange={event => setStatus(event.target.value)}><option value="all">All products</option><option value="published">Published</option><option value="draft">Draft</option><option value="archived">Archived</option></select></label></div>
@@ -201,11 +331,14 @@ export default function AdminPanel() {
           </>}
 
           <div hidden={section !== 'Inventory'}><InventoryDesk key={inventoryReset} data={data} busy={busy} save={save} onDirtyChange={setInventoryDirty} referenceQuery={referenceQuery} searchReference={searchReference} /></div>
+          {section === 'Orders' && <div className="admin-orders"><div className="admin-card"><div className="admin-card-heading"><span className="admin-section-number">04</span><div><h3>Orders</h3><p>View, track and update order status</p></div></div>{orders.length ? <div className="admin-order-list">{orders.map(order => <article className="admin-order-row" key={order.id} onClick={() => openOrderDetail(order.id)} style={{cursor: 'pointer'}}><div className="admin-order-info"><div><strong>{order.orderNumber}</strong><small>{order.customerEmail}</small></div><span className={`admin-badge order-status-${order.status}`}>{order.status}</span></div><div className="admin-order-meta"><span>₹{order.total.toLocaleString('en-IN')}</span><span>{order.items} item{(order.items!==1)?'s':''}</span><span>{new Date(order.createdAt).toLocaleDateString('en-IN')}</span></div><div className="admin-order-actions"><select value={order.status} onChange={event => updateOrderStatus(order.id, event.target.value)} disabled={busy}><option value="pending">Pending</option><option value="confirmed">Confirmed</option><option value="shipped">Shipped</option><option value="delivered">Delivered</option><option value="cancelled">Cancelled</option></select><button className="admin-button secondary" onClick={() => updateOrderStatus(order.id, order.status)} disabled={busy}>Save</button></div></article>)}</div> : <p className="admin-empty">No orders yet. Orders will appear here when customers place them.</p>}</div></div>}
+
+          {section === 'Returns' && <div className="admin-orders"><div className="admin-card"><div className="admin-card-heading"><span className="admin-section-number">05</span><div><h3>Returns</h3><p>Review and action return requests from customers</p></div></div>{returnsList.length ? <div className="admin-return-list">{returnsList.map(ret => <article className="admin-return-row" key={ret.id}><div className="admin-return-info"><div><strong>{ret.return_number}</strong><small>Order #{ret.order_id}</small></div><span className={`admin-badge return-status-${ret.status}`}>{ret.status}</span></div><div className="admin-return-meta"><span>{ret.reason}</span><span>{new Date(ret.created_at).toLocaleDateString('en-IN')}</span></div><div className="admin-return-actions"><select value={ret.status} onChange={event => updateReturnStatus(ret.id, event.target.value)} disabled={busy}><option value="requested">Requested</option><option value="approved">Approved</option><option value="rejected">Rejected</option><option value="completed">Completed</option></select><button className="admin-button secondary" onClick={() => updateReturnStatus(ret.id, ret.status)} disabled={busy}>Save</button></div></article>)}</div> : <p className="admin-empty">No return requests yet.</p>}</div></div>}
           {!data.inventoryReady && section === 'Products' && <div className="admin-info"><strong>Upgrade your existing stock records first.</strong><p>Open Inventory and choose Upgrade inventory. Your existing quantities will be preserved; colour and size editing unlocks afterwards.</p><button className="admin-button secondary" type="button" onClick={() => setSection('Inventory')}>Open Inventory</button></div>}
 
-          {section === 'Settings' && settings && <form className="admin-settings" onSubmit={async event => {event.preventDefault(); const next = await save({action: 'saveSettings', upiId: settings.upiId.trim(), buybackEnabled: settings.buybackEnabled, expectedRevision: settings.revision}, 'Store settings saved. Changes apply across devices.'); if (next) setSettings(next.settings);}}>
+          {section === 'Settings' && settings && <form className="admin-settings" onSubmit={async event => {event.preventDefault(); const next = await save({action: 'saveSettings', upiId: settings.upiId.trim(), buybackEnabled: settings.buybackEnabled, codEnabled: settings.codEnabled, expectedRevision: settings.revision}, 'Store settings saved. Changes apply across devices.'); if (next) setSettings(next.settings);}}>
             <div className="admin-card"><div className="admin-card-heading"><span className="admin-section-number">01</span><div><h3>Receiving UPI</h3><p>Your intended payment destination</p></div><span className="admin-badge low">Setup pending</span></div><label>UPI ID<input name="upiId" disabled={busy} required maxLength={100} value={settings.upiId} onChange={event => setSettings({...settings, upiId: event.target.value})} autoCapitalize="none" autoCorrect="off" spellCheck={false} placeholder="name@bank" /></label><p className="admin-help">UPI ID badalne ke liye yahan edit karke Save settings dabayein. Format check hota hai; bank account ownership verify nahi hoti.</p><div className="admin-info"><strong>Payments are not active.</strong><p>This saves the intended receiving ID. It does not change an active YouPI account or enable checkout. When YouPI is hosted, its receiving account must match this ID before payments open.</p></div></div>
-            <div className="admin-card"><div className="admin-card-heading"><span className="admin-section-number">02</span><div><h3>Buyback</h3><p>Control what shoppers can see</p></div></div><label className="admin-switch"><span><strong>Show buyback page &amp; eligibility checker</strong><small>{settings.buybackEnabled ? 'On — program information is visible.' : 'Off — promotions and the checklist are hidden.'}</small></span><input type="checkbox" disabled={busy} role="switch" checked={settings.buybackEnabled} onChange={event => setSettings({...settings, buybackEnabled: event.target.checked})} /></label><p className="admin-help">On karne se sirf program ki information aur preliminary checklist dikhegi. Claims, credit aur discount approval abhi available nahi hain.</p></div>
+            <div className="admin-card"><div className="admin-card-heading"><span className="admin-section-number">02</span><div><h3>Buyback</h3><p>Control what shoppers can see</p></div></div><label className="admin-switch"><span><strong>Show buyback page &amp; eligibility checker</strong><small>{settings.buybackEnabled ? 'On — program information is visible.' : 'Off — promotions and the checklist are hidden.'}</small></span><input type="checkbox" disabled={busy} role="switch" checked={settings.buybackEnabled} onChange={event => setSettings({...settings, buybackEnabled: event.target.checked})} /></label><p className="admin-help">On karne se sirf program ki information aur preliminary checklist dikhegi. Claims, credit aur discount approval abhi available nahi hain.</p></div><div className="admin-card"><div className="admin-card-heading"><span className="admin-section-number">03</span><div><h3>Cash on Delivery</h3><p>Control COD as a payment option</p></div></div><label className="admin-switch"><span><strong>Accept Cash on Delivery</strong><small>{settings.codEnabled ? 'On — customers can pay cash at delivery.' : 'Off — COD is hidden at checkout.'}</small></span><input type="checkbox" disabled={busy} role="switch" checked={settings.codEnabled} onChange={event => setSettings({...settings, codEnabled: event.target.checked})} /></label><p className="admin-help">COd on karne se checkout mein Cash on Delivery dikhega. Delivery waqt par cash collection ki zimmedari aapki hogi. Courier partner select karna zaroori hai.</p></div>
             <div className="admin-save-row"><span>Changes save to the shared store database.</span><button className="admin-button" type="submit" disabled={busy}>{busy ? 'Saving…' : 'Save settings'} <Icon name="check" size={18} /></button></div>
           </form>}
 
@@ -238,7 +371,7 @@ export default function AdminPanel() {
               return <fieldset className="admin-colour-card" key={color.id}><legend>Colour {colorIndex + 1}{color.name ? ` · ${color.name}` : ''}</legend>
                 <div className="admin-form-grid"><label>Colour name<input required maxLength={60} value={color.name} onChange={event => changeColor(color.id, {name: event.target.value})} placeholder="e.g. Washed black" /></label><label>Colour swatch<input type="color" value={color.hex} onChange={event => changeColor(color.id, {hex: event.target.value})} /></label></div>
                 <div className="admin-colour-photos">{color.images.map((image, index) => <div key={`${image}-${index}`}><img src={image} alt={`${color.name || 'New colour'}, photo ${index + 1}`} width="88" height="112" /><span>{index === 0 ? 'Main photo' : `Photo ${index + 1}`}</span><div>{index > 0 && <button type="button" className="admin-button secondary" onClick={() => changeColor(color.id, {images: [image, ...color.images.filter((_, position) => position !== index)]})}>Make main</button>}<button type="button" className="admin-button secondary" disabled={color.images.length === 1 || !!upload} aria-label={`Remove ${color.name} photo ${index + 1}`} onClick={() => changeColor(color.id, {images: color.images.filter((_, position) => position !== index)})}>Remove</button></div></div>)}</div>
-                <div className="admin-photo-tools"><label>Add sample photo<select disabled={color.images.length >= 6 || !!upload} value="" onChange={event => {if (event.target.value) changeColor(color.id, {images: [...color.images, event.target.value]});}}><option value="">Choose a photo</option>{[1, 2, 3, 4].map(number => <option key={number} disabled={color.images.includes(`/images/product-${number}.webp`)} value={`/images/product-${number}.webp`}>Sample photo {number}</option>)}</select></label><label>Add your photo<input key={`${color.id}-${upload?.colorId === color.id ? upload.file.name : 'empty'}`} disabled={color.images.length >= 6 || !!upload} type="file" accept="image/jpeg,image/png,image/webp" onChange={event => {const file = event.target.files?.[0]; if (file) setUpload({file, colorId: color.id});}} /><small>Up to 6 photos per colour · JPG, PNG or WebP · 5 MB each</small></label></div>
+                <div className="admin-photo-tools"><label>Add sample photo<select disabled={color.images.length >= 6 || !!upload} value="" onChange={event => {if (event.target.value) changeColor(color.id, {images: [...color.images, event.target.value]});}}><option value="">Choose a photo</option>{[1, 2, 3, 4].map(number => <option key={number} disabled={color.images.includes(`/images/product-${number}.webp`)} value={`/images/product-${number}.webp`}>Sample photo {number}</option>)}</select></label><label>Add your photo<input key={`${color.id}-${upload?.colorId === color.id ? upload.file.name : 'empty'}`} disabled={color.images.length >= 6 || !!upload} type="file" accept="image/jpeg,image/png,image/webp" onChange={event => {const file = event.target.files?.[0]; if (file) setUpload({file, colorId: color.id});}} /><small>Up to 6 photos per colour · JPG, PNG or WebP · 5 MB each</small></label></div><div className="admin-form-grid"><label>3D model URL (GLB/GLTF)<input maxLength={500} value={color.threedee_asset ?? ''} onChange={event => changeColor(color.id, {threedee_asset: event.target.value.trim() || undefined})} placeholder="https://cdn.example.com/model.glb" /></label><small className="admin-help">Optional GLB/GLTF 3D model link for this colour. Leave blank to use the CSS illustration.</small></div>
                 {upload?.colorId === color.id && <div className="admin-stock-actions"><span>{upload.file.name}</span><button type="button" className="admin-button secondary" onClick={() => setUpload(null)}>Clear selection</button><button type="button" className="admin-button" onClick={uploadPhoto}>{busy ? 'Uploading…' : 'Upload selected photo'}</button></div>}
                 <div className="admin-variant-list">{variants.map(variant => <div className="admin-variant-row" key={variant.id}><strong>Size {variant.size}</strong><label>SKU<input required maxLength={120} pattern="[A-Z0-9]+(?:-[A-Z0-9]+)*" readOnly={variant.revision > 0} value={variant.sku} onChange={event => setEditing({...editing, variants: editing.variants.map(item => item.id === variant.id ? {...item, sku: event.target.value.toUpperCase()} : item)})} /><small>{variant.revision > 0 ? 'Saved SKU stays fixed.' : 'Unique stock code. You may edit it before saving.'}</small></label><button type="button" className="admin-close" disabled={variants.length === 1 || !!variant.onHand || !!variant.reserved} aria-label={`Remove ${color.name} size ${variant.size}`} onClick={() => setEditing({...editing, variants: editing.variants.filter(item => item.id !== variant.id)})}><Icon name="close" size={16} /></button></div>)}</div>
                 <div className="admin-colour-actions"><label>Add waist size<select value="" disabled={editing.variants.length >= 100} onChange={event => {if (event.target.value) addSize(color.id, Number(event.target.value));}}><option value="">Choose a size</option>{Array.from({length: 41}, (_, index) => index + 20).filter(size => !variants.some(variant => variant.size === size)).map(size => <option key={size} value={size}>{size}</option>)}</select></label><button type="button" className="admin-button secondary" disabled={editing.colors.length === 1 || stocked || !!upload} onClick={() => setEditing({...editing, colors: editing.colors.filter(item => item.id !== color.id), variants: editing.variants.filter(variant => variant.colorId !== color.id)})}>Remove colour</button></div>
@@ -251,5 +384,85 @@ export default function AdminPanel() {
         <div className="admin-editor-actions"><button className="admin-button secondary" type="button" disabled={busy} onClick={() => dialog.current?.close()}>Cancel</button><button className="admin-button" type="submit" disabled={busy}>{busy ? 'Saving…' : 'Save product'} <Icon name="check" size={18} /></button></div>
       </form>}
     </dialog>
+
+    {orderDetailModalOpen && orderDetail && (
+      <dialog className="admin-modal" onClose={() => setOrderDetailModalOpen(false)}>
+        <button className="admin-close" onClick={() => setOrderDetailModalOpen(false)}><Icon name="close" size={18} /></button>
+        <div className="admin-modal-content">
+          <h3>Order #{orderDetail.order_number}</h3>
+          <p><strong>Customer:</strong> {orderDetail.customer_email}</p>
+          <p><strong>Status:</strong> <span className={`admin-badge order-status-${orderDetail.status}`}>{orderDetail.status}</span></p>
+          <p><strong>Payment:</strong> {orderDetail.payment_status}</p>
+          <p><strong>Total:</strong> ₹{orderDetail.total.toLocaleString('en-IN')}</p>
+          <p><strong>Date:</strong> {new Date(orderDetail.created_at).toLocaleDateString('en-IN')}</p>
+          <h4>Items</h4>
+          <table className="admin-table">
+            <thead><tr><th>Product</th><th>Color</th><th>Size</th><th>Qty</th><th>Price</th><th>Total</th></tr></thead>
+            <tbody>
+              {orderDetail.items.map((item: any) => (
+                <tr key={item.id}>
+                  <td>{item.product_name}</td>
+                  <td>{item.color_name}</td>
+                  <td>{item.size}</td>
+                  <td>{item.quantity}</td>
+                  <td>₹{item.unit_price.toLocaleString('en-IN')}</td>
+                  <td>₹{item.total_price.toLocaleString('en-IN')}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {orderDetail.status !== 'cancelled' && orderDetail.items.length > 0 && (
+            <div className="admin-modal-actions">
+              <button className="admin-button secondary" onClick={() => {setOrderDetailModalOpen(false); setReturnCreationOrder(orderDetail); setSelectedReturnItems([]); setReturnReason(''); setReturnCreateModalOpen(true);}}>Initiate Return for Items</button>
+            </div>
+          )}
+        </div>
+      </dialog>
+    )}
+
+    {returnCreateModalOpen && returnCreationOrder && (
+      <dialog className="admin-modal" onClose={() => setReturnCreateModalOpen(false)}>
+        <button className="admin-close" onClick={() => setReturnCreateModalOpen(false)}><Icon name="close" size={18} /></button>
+        <div className="admin-modal-content">
+          <h3>Return Items — Order #{returnCreationOrder.order_number}</h3>
+          <p>Select items to return from this order:</p>
+          <label>Reason<input type="text" value={returnReason} onChange={event => setReturnReason(event.target.value)} placeholder="e.g. wrong size, damaged" /></label>
+          <table className="admin-table">
+            <thead><tr><th>Select</th><th>Product</th><th>Color</th><th>Size</th><th>Ordered</th><th>Return Qty</th></tr></thead>
+            <tbody>
+              {returnCreationOrder.items.map((item: any) => {
+                const selected = selectedReturnItems.find(si => si.orderItemId === item.id);
+                const maxQty = item.quantity;
+                return (
+                  <tr key={item.id}>
+                    <td>
+                      <label className="admin-switch">
+                        <span>{selected ? 'Selected' : 'Select'}</span>
+                        <input type="checkbox" role="switch" checked={!!selected} onChange={() => toggleReturnItem(item.id, maxQty)} />
+                      </label>
+                    </td>
+                    <td>{item.product_name}</td>
+                    <td>{item.color_name}</td>
+                    <td>{item.size}</td>
+                    <td>{item.quantity}</td>
+                    <td>
+                      {selected ? (
+                        <input type="number" min={1} max={maxQty} value={selected.quantity} onChange={event => updateReturnItemQuantity(item.id, Math.min(maxQty, Math.max(1, Number(event.target.value))))} />
+                      ) : (
+                        <span>-</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          <div className="admin-modal-actions">
+            <button className="admin-button secondary" onClick={() => setReturnCreateModalOpen(false)}>Cancel</button>
+            <button className="admin-button" disabled={busy || selectedReturnItems.length === 0 || !returnReason.trim()} onClick={createReturn}>Create Return</button>
+          </div>
+        </div>
+      </dialog>
+    )}
   </div>;
 }

@@ -15,6 +15,7 @@ export type Product = {
   description: string;
   badge?: string;
   collection: 'Everyday' | 'New arrivals' | 'The essentials';
+  threedee_asset?: string;
 };
 
 // Sample catalogue for the storefront preview; replace with the public catalogue API.
@@ -26,6 +27,7 @@ export const products: Product[] = [
     image: '/images/product-1.webp', color: 'Indigo', colorHex: '#354e69',
     sizes: [28, 30, 32, 34, 36], collection: 'The essentials', badge: 'Signature fit',
     description: 'An easy straight leg in an indigo wash. A familiar silhouette for early starts and late plans.',
+    threedee_asset: 'https://cdn.westos.example/models/daybreak-straight.glb',
   },
   {
     id: 'westos-002', slug: 'afterhours-slim', name: 'The Afterhours Slim',

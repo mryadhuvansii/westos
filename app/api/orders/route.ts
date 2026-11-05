@@ -34,6 +34,7 @@ export async function POST(request: Request) {
     const db = await getDb();
     const order = await createOrder(db, {
       customerId: identity.customerId,
+      customerEmail: identity.email,
       items: items.map((item: any) => ({
         variantId: item.variantId,
         sku: item.sku,

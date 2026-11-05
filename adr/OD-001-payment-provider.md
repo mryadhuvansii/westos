@@ -1,32 +1,33 @@
 # ADR-001: Payment Gateway Provider Selection
 
-## Status: PROPOSED (awaiting Finance sign-off)
+## Status: DECIDED — PhonePe
 
 ## Decision
-**Recommended: Razorpay** as primary payment provider, with Stripe as optional international fallback.
+**PhonePe** selected as primary payment gateway for UPI, cards, wallets, and BNPL. Sandbox first, production after merchant onboarding.
 
 ## Rationale
-| Criterion | Razorpay | PhonePe | Stripe |
-|-----------|----------|---------|--------|
-| India market presence | Strong | Strong | Moderate |
-| UPI support | Excellent | Excellent | Limited |
-| Cards/Wallets/BNPL | Yes | Yes | Yes |
-| Developer experience | Good | Good | Excellent |
-| Transaction fees | Competitive | Competitive | Higher (international) |
-| PCI DSS handling | Hosted checkout | Hosted checkout | Hosted checkout |
-| Webhook reliability | Good | Good | Excellent |
-| Refund API | Yes | Yes | Yes |
-| Sandbox availability | Yes | Yes | Yes |
+| Criterion | PhonePe |
+|-----------|---------|
+| India market presence | Strong |
+| UPI support | Excellent (native) |
+| Cards/Wallets/BNPL | Yes |
+| Developer experience | Good |
+| Transaction fees | Competitive |
+| PCI DSS handling | Hosted checkout |
+| Webhook reliability | Good |
+| Refund API | Yes |
+| Sandbox availability | Yes |
 
 ## Implementation Implications
-- Adapter pattern in `server/payment-api.ts` (already exists as separate Node service)
+- Adapter pattern in `server/payment-api.ts` (PhonePe-specific)
 - Raw card data **never** stored in Westos DB or logs (Doc 02 §9.41)
 - Payment tokenization preferred (Doc 02 §9.40)
-- Webhooks: `POST /api/payments/webhook` with HMAC signature verification
+- Webhooks: `POST /api/payment/webhook` with PhonePe checksum verification
 - Idempotency keys required on all payment intents (Doc 03 §1.103)
+- Environment variables: `PHONEPE_MERCHANT_ID`, `PHONEPE_SALT_KEY`, `PHONEPE_SALT_INDEX`, `PHONEPE_ENVIRONMENT` (Cloudflare secrets, never committed to Git)
 
 ## Open Items
-- [ ] Finance to confirm Razorpay contract & sandbox access
+- [ ] PhonePe Merchant Dashboard access & sandbox credentials
 - [ ] Merchant onboarding completion
 - [ ] Webhook secret configuration in Cloudflare secrets
 - [ ] Transaction fee model sign-off

@@ -43,7 +43,7 @@ function DenimFace({color,back,gradientId}:{color:ProductColor;back:boolean;grad
   </svg>;
 }
 
-export default function Jeans360View({color,fit}:{color:ProductColor;fit:string}) {
+export default function Jeans360View({color,fit,threedeeAsset}:{color:ProductColor;fit:string;threedeeAsset?:string}) {
   const [angle,setAngle]=useState(0),drag=useRef<{pointerId:number;x:number;angle:number}|null>(null),uid=useId().replaceAll(':','');
   const view=turntableView(angle),width=fit==='Baggy'?1.1:fit==='Slim'?.88:fit==='Bootcut'?1.02:1;
   function begin(event:PointerEvent<HTMLDivElement>) {
@@ -78,5 +78,6 @@ export default function Jeans360View({color,fit}:{color:ProductColor;fit:string}
       <button type="button" className="jeans-360-turn" onClick={()=>rotate(45)} aria-label="Rotate jeans right 45 degrees"><Icon name="arrow"/></button>
     </div>
     <p className="jeans-360-note">Illustrative 3D fit view · color and fit preview only</p>
+    {threedeeAsset && <div className="jeans-360-asset"><a href={threedeeAsset} target="_blank" rel="noopener noreferrer"><Icon name="external" size={16} style={{marginRight:6}}/>Open custom 3D model ({threedeeAsset.split('.').pop()?.toUpperCase()})</a></div>}
   </div>;
 }

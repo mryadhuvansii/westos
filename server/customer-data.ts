@@ -73,6 +73,7 @@ export async function getOrderItems(db: D1Database, orderId: string) {
 
 export async function createOrder(db: D1Database, input: {
   customerId: string;
+  customerEmail?: string;
   items: {variantId: string; sku: string; productName: string; colorName: string; size: number; quantity: number; unitPrice: number; totalPrice: number}[];
   shippingAddressId?: string;
   billingAddressId?: string;
@@ -87,8 +88,8 @@ export async function createOrder(db: D1Database, input: {
   const total = subtotal + tax + shipping;
 
   await db.batch([
-    db.prepare(`INSERT INTO orders (id, order_number, customer_id, status, subtotal, tax, shipping, total, currency, shipping_address_id, billing_address_id, created_at, updated_at) VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, 'INR', ?, ?, ?, ?)`)
-      .bind(orderId, orderNumber, input.customerId, subtotal, tax, shipping, total, input.shippingAddressId ?? null, input.billingAddressId ?? null, now, now),
+    db.prepare(`INSERT INTO orders (id, order_number, customer_id, customer_email, status, subtotal, tax, shipping, total, currency, shipping_address_id, billing_address_id, created_at, updated_at) VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?, 'INR', ?, ?, ?, ?)`)
+      .bind(orderId, orderNumber, input.customerId, input.customerEmail ?? null, subtotal, tax, shipping, total, input.shippingAddressId ?? null, input.billingAddressId ?? null, now, now),
     ...input.items.map(item => db.prepare(`INSERT INTO order_items (id, order_id, variant_id, sku, product_name, color_name, size, quantity, unit_price, total_price) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
       .bind(generateId('oi'), orderId, item.variantId, item.sku, item.productName, item.colorName, item.size, item.quantity, item.unitPrice, item.totalPrice)),
   ]);
@@ -117,7 +118,7 @@ export async function listCustomerReturns(db: D1Database, customerId: string) {
 }
 
 export async function listAllOrders(db: D1Database) {
-  const rows = await db.prepare(`SELECT o.id, o.order_number, o.customer_id, o.status, o.subtotal, o.tax, o.shipping, o.total, o.currency, o.payment_status, o.created_at, o.updated_at FROM orders o ORDER BY o.created_at DESC`).all();
+  const rows = await db.prepare(`SELECT o.id, o.order_number, o.customer_id, o.customer_email, o.status, o.subtotal, o.tax, o.shipping, o.total, o.currency, o.payment_status, o.created_at, o.updated_at FROM orders o ORDER BY o.created_at DESC`).all();
   return rows.results;
 }
 
@@ -140,4 +141,104 @@ export async function updateReturnStatus(db: D1Database, returnId: string, statu
   const result = await db.prepare(`UPDATE returns SET status = ?, updated_at = ? WHERE id = ?`).bind(status, new Date().toISOString(), returnId).run();
   if (result.meta.changes === 0) throw new StoreError(404, 'Return not found.');
   return {id: returnId, status};
+}
+
+export async function getDashboardStats(db: D1Database) {
+  const [orderStats, returnStats, stockStats] = await Promise.all([
+    db.prepare(`SELECT COUNT(*) AS total_orders, COALESCE(SUM(CASE WHEN status != 'cancelled' THEN total ELSE 0 END), 0) AS total_revenue, COUNT(CASE WHEN status = 'pending' THEN 1 END) AS pending_orders FROM orders`).first<{total_orders: number; total_revenue: number; pending_orders: number}>(),
+    db.prepare(`SELECT COUNT(*) AS total_returns, COUNT(CASE WHEN status = 'requested' THEN 1 END) AS pending_returns FROM returns`).first<{total_returns: number; pending_returns: number}>(),
+    db.prepare(`SELECT COALESCE(SUM(CASE WHEN active = 1 THEN on_hand ELSE 0 END), 0) AS available, COALESCE(SUM(CASE WHEN active = 1 THEN reserved ELSE 0 END), 0) AS reserved FROM stock_variants`).first<{available: number; reserved: number}>(),
+  ]);
+  const totalOrders = orderStats.total_orders || 0;
+  const totalReturns = returnStats.total_returns || 0;
+  return {
+    sales: {
+      totalOrders,
+      totalRevenue: orderStats.total_revenue || 0,
+      pendingOrders: orderStats.pending_orders || 0,
+    },
+    returns: {
+      totalReturns,
+      pendingReturns: returnStats.pending_returns || 0,
+      returnRate: totalOrders > 0 ? Math.round((totalReturns / totalOrders) * 100) : 0,
+    },
+    stock: {
+      available: stockStats.available || 0,
+      reserved: stockStats.reserved || 0,
+    },
+  };
+}
+
+export async function getTopSelling(db: D1Database, limit = 10) {
+  const rows = await db.prepare(`SELECT oi.product_name, oi.color_name, oi.size, SUM(oi.quantity) AS total_qty, SUM(oi.total_price) AS total_revenue FROM order_items oi JOIN orders o ON o.id = oi.order_id WHERE o.status != 'cancelled' GROUP BY oi.product_name, oi.color_name, oi.size ORDER BY total_qty DESC LIMIT ?`).bind(limit).all();
+  return rows.results;
+}
+
+export async function getTopSizes(db: D1Database, limit = 10) {
+  const rows = await db.prepare(`SELECT oi.size, SUM(oi.quantity) AS total_qty FROM order_items oi JOIN orders o ON o.id = oi.order_id WHERE o.status != 'cancelled' GROUP BY oi.size ORDER BY total_qty DESC LIMIT ?`).bind(limit).all();
+  return rows.results;
+}
+
+export async function getTopColors(db: D1Database, limit = 10) {
+  const rows = await db.prepare(`SELECT oi.color_name, SUM(oi.quantity) AS total_qty FROM order_items oi JOIN orders o ON o.id = oi.order_id WHERE o.status != 'cancelled' GROUP BY oi.color_name ORDER BY total_qty DESC LIMIT ?`).bind(limit).all();
+  return rows.results;
+}
+
+export async function getStockMovements(db: D1Database, limit = 50) {
+  const rows = await db.prepare(`SELECT sm.id, sm.variant_id, sm.type, sm.quantity, sm.reason, sm.reference, sm.created_at, sv.sku, sv.size, sv.color_id FROM stock_movements sm JOIN stock_variants sv ON sv.id = sm.variant_id ORDER BY sm.created_at DESC LIMIT ?`).bind(limit).all();
+  return rows.results;
+}
+
+export async function getOrderDetail(db: D1Database, orderId: string) {
+  const order = await db.prepare(`SELECT o.id, o.order_number, o.customer_id, o.customer_email, o.status, o.subtotal, o.tax, o.shipping, o.total, o.currency, o.payment_status, o.payment_provider, o.payment_reference, o.created_at, o.updated_at FROM orders o WHERE o.id = ?`).bind(orderId).first();
+  if (!order) return null;
+  const items = await db.prepare(`SELECT oi.id, oi.variant_id, oi.sku, oi.product_name, oi.color_name, oi.size, oi.quantity, oi.unit_price, oi.total_price FROM order_items oi WHERE oi.order_id = ?`).bind(orderId).all();
+  return {...order, items: items.results};
+}
+
+export async function recordStockMovement(db: D1Database, variantId: string, type: 'in' | 'out' | 'adjust' | 'return', quantity: number, reason: string, reference?: string) {
+  const id = generateId('mov');
+  const now = new Date().toISOString();
+  await db.prepare(`INSERT INTO stock_movements (id, variant_id, type, quantity, reason, reference, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`).bind(id, variantId, type, quantity, reason, reference ?? null, now).run();
+  return {id, variantId, type, quantity, reason, createdAt: now};
+}
+
+export async function createPaymentTransaction(db: D1Database, input: {
+  orderId: string;
+  amount: number;
+  currency?: string;
+}) {
+  const id = generateId('pay');
+  const now = new Date().toISOString();
+  await db.prepare(`INSERT INTO payment_transactions (id, order_id, amount, currency, status, created_at, updated_at) VALUES (?, ?, ?, ?, 'PENDING', ?, ?)`)
+    .bind(id, input.orderId, input.amount, input.currency ?? 'INR', now, now).run();
+  return {id, orderId: input.orderId, amount: input.amount, currency: input.currency ?? 'INR', status: 'PENDING', createdAt: now};
+}
+
+export async function getPaymentTransactionByOrderId(db: D1Database, orderId: string) {
+  return db.prepare(`SELECT id, order_id, phonepe_transaction_id, amount, currency, status, phonepe_response, created_at, updated_at FROM payment_transactions WHERE order_id = ?`).bind(orderId).first();
+}
+
+export async function updatePaymentTransaction(db: D1Database, paymentId: string, updates: {
+  phonepeTransactionId?: string;
+  status?: string;
+  phonepeResponse?: string;
+}) {
+  const now = new Date().toISOString();
+  const fields: string[] = [];
+  const values: unknown[] = [];
+  if (updates.phonepeTransactionId !== undefined) { fields.push('phonepe_transaction_id = ?'); values.push(updates.phonepeTransactionId); }
+  if (updates.status !== undefined) { fields.push('status = ?'); values.push(updates.status); }
+  if (updates.phonepeResponse !== undefined) { fields.push('phonepe_response = ?'); values.push(updates.phonepeResponse); }
+  fields.push('updated_at = ?'); values.push(now);
+  values.push(paymentId);
+  const result = await db.prepare(`UPDATE payment_transactions SET ${fields.join(', ')} WHERE id = ?`).bind(...values).run();
+  if (result.meta.changes === 0) throw new StoreError(404, 'Payment transaction not found.');
+  return {id: paymentId, ...updates, updatedAt: now};
+}
+
+export async function getPaymentStatus(db: D1Database, orderId: string) {
+  const row = await db.prepare(`SELECT status, phonepe_transaction_id, amount, updated_at FROM payment_transactions WHERE order_id = ? ORDER BY created_at DESC LIMIT 1`).bind(orderId).first();
+  if (!row) return null;
+  return {orderId, status: row.status, phonepeTransactionId: row.phonepe_transaction_id, amount: row.amount, updatedAt: row.updated_at};
 }

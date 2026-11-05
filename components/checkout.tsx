@@ -13,18 +13,78 @@ const emptyAddress = { name: '', email: '', phone: '', street: '', city: '', sta
 export default function Checkout() {
   const { cart, ready, products, settings } = useStore();
   const [step, setStep] = useState(0);
+  const [paymentLoading, setPaymentLoading] = useState(false);
+  const [paymentError, setPaymentError] = useState('');
   // ponytail: address stays in this mounted preview only; real checkout needs an authenticated server session.
   const [address, setAddress] = useState(emptyAddress);
   const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => { heading.current?.focus(); }, [step]);
+
+  const subtotal = cartTotal(cart, products);
+
+  async function createOrderAndPayment() {
+    setPaymentLoading(true);
+    setPaymentError('');
+    try {
+      const token = localStorage.getItem('westos_token');
+      if (!token) throw new Error('Please sign in to place an order.');
+
+      const orderRes = await fetch('/api/orders', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'Authorization': `Bearer ${token}`},
+        body: JSON.stringify({
+          items: cart.map(item => {
+            const product = products.find(p => p.id === item.productId);
+            const variant = product?.variants.find(v => v.id === item.variantId);
+            const color = product?.colors.find(c => c.id === variant?.colorId);
+            return {
+              variantId: item.variantId,
+              sku: variant?.sku || '',
+              productName: product?.name || '',
+              colorName: color?.name || '',
+              size: variant?.size || 0,
+              quantity: item.quantity,
+              unitPrice: product?.price || 0,
+              totalPrice: (product?.price || 0) * item.quantity,
+            };
+          }),
+          shippingAddressId: undefined,
+          billingAddressId: undefined,
+        }),
+      });
+      if (!orderRes.ok) throw new Error('Order creation failed.');
+      const orderData = await orderRes.json();
+      const orderId = orderData.order.id;
+
+      const payRes = await fetch('/api/payment/create', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({orderId, amount: subtotal}),
+      });
+      if (!payRes.ok) {
+        const err = await payRes.json().catch(() => ({}));
+        throw new Error(err.error || 'Payment creation failed.');
+      }
+      const payData = await payRes.json();
+      if (payData.redirectUrl) {
+        window.location.href = payData.redirectUrl;
+      } else {
+        throw new Error('No redirect URL from payment gateway.');
+      }
+    } catch (error) {
+      setPaymentError(error instanceof Error ? error.message : 'Payment failed.');
+      setPaymentLoading(false);
+    }
+  }
 
   if (!ready) return <div className="container checkout-loading" role="status">Loading your bag…</div>;
   if (!cart.length) return <section className="container secondary-empty"><p className="eyebrow">A GOOD PLACE TO START</p><h1>Your next favourite pair awaits.</h1><p>Add a pair to your bag to explore the checkout preview.</p><Link href="/shop" className="button">Explore the collection <span aria-hidden="true">↗</span></Link></section>;
 
   return <div className="container checkout-page">
     <Link href="/cart" className="text-link checkout-back">← Back to your bag</Link>
-    <div className="checkout-page-title"><div><p className="eyebrow">THE FINAL DETAILS</p><h1>Make it yours.</h1></div><span className="secondary-label">CHECKOUT PREVIEW</span></div>
-    <p className="notice">Explore a sample checkout. Ordering is not available yet. Use sample details; your address is kept only while this page is open.</p>
+    <div className="checkout-page-title"><div><p className="eyebrow">THE FINAL DETAILS</p><h1>Make it yours.</h1></div><span className="secondary-label">{settings.codEnabled ? 'LIVE CHECKOUT' : 'CHECKOUT PREVIEW'}</span></div>
+    {!settings.codEnabled && <p className="notice">Explore a sample checkout. Ordering is not available yet. Use sample details; your address is kept only while this page is open.</p>}
+    {settings.codEnabled && paymentError && <p className="notice error">{paymentError}</p>}
     <div className="checkout-grid">
       <section className="checkout-flow" aria-label="Checkout details">
         <ol className="checkout-steps" aria-label="Checkout progress">
@@ -56,18 +116,31 @@ export default function Checkout() {
             <button className="button" type="button" onClick={() => setStep(2)}>Preview payment <span aria-hidden="true">→</span></button>
           </>}
           {step === 2 && <>
-            <p className="muted">UPI payments will open with YouPI-PG once the store is live.</p>
-            <div className="checkout-payment-preview"><span className="secondary-label">UPI WITH YOUPI-PG</span><h3>Your UPI. Your next pair.</h3><p>YouPI-PG is selected for checkout. Merchant setup is still pending, so no payment details are requested and no money is charged in this preview.</p></div>
-            <div className="checkout-form-actions"><button className="text-link" type="button" onClick={() => setStep(1)}>← Shipping</button><button className="button" type="button" onClick={() => setStep(3)}>Review details <span aria-hidden="true">→</span></button></div>
+            <p className={settings.codEnabled ? '' : 'muted'}>Choose how you'd like to pay.</p>
+            <div className="checkout-payment-methods">
+              <button className="payment-option" onClick={() => setStep(3)} disabled={!settings.codEnabled}>
+                <span className="payment-radio"></span>
+                <div><strong>Cash on Delivery</strong><span>Pay ₹{formatPrice(subtotal)} on delivery</span></div>
+              </button>
+              {settings.codEnabled && <button className="payment-option phonepe-option" onClick={createOrderAndPayment} disabled={paymentLoading}>
+                <span className="payment-radio"></span>
+                <div><strong>PhonePe</strong><span>UPI, cards, wallets &amp; BNPL</span></div>
+                {paymentLoading && <span className="payment-loading">Connecting…</span>}
+              </button>}
+            </div>
+            {!settings.codEnabled && <p className="muted">Cash on Delivery must be enabled in Settings to place live orders.</p>}
+            <div className="checkout-form-actions"><button className="text-link" type="button" onClick={() => setStep(1)}>← Shipping</button>{settings.codEnabled && <button className="button" type="button" onClick={() => setStep(3)}>Review details <span aria-hidden="true">→</span></button>}</div>
           </>}
           {step === 3 && <>
-            <p className="muted">Your sample checkout is ready to review. No order has been created.</p>
+            <p className="muted">Review your order before payment.</p>
             <div className="checkout-review">
               <div><h3>Contact & delivery</h3><button className="text-link" type="button" onClick={() => setStep(0)}>Edit</button><p>{address.name}<br />{address.email}<br />+91 {address.phone}</p><p>{address.street}<br />{address.city}, {address.state} — {address.pincode}</p></div>
-              <div><h3>Shipping & payment</h3><p>Available after launch. Final delivery charges, taxes and the payable total will be confirmed before payment.</p></div>
+              <div><h3>Payment</h3><p>{settings.codEnabled ? 'Cash on Delivery or PhonePe' : 'Configured at launch'}</p><p>Total: <strong>₹{formatPrice(subtotal)}</strong></p></div>
             </div>
-            <button className="button checkout-place-order" type="button" disabled aria-describedby="order-unavailable">Place order — coming soon</button>
-            <p id="order-unavailable" className="checkout-smallprint">Ordering opens when payment, shipping and tax settings are ready.</p>
+            <button className="button checkout-place-order" type="button" disabled={!settings.codEnabled || paymentLoading} onClick={createOrderAndPayment} aria-describedby={settings.codEnabled ? undefined : 'order-unavailable'}>
+              {paymentLoading ? 'Connecting to PhonePe…' : settings.codEnabled ? 'Pay with PhonePe' : 'Place order — coming soon'}
+            </button>
+            <p id="order-unavailable" className="checkout-smallprint">Ordering opens when payment settings are ready.</p>
             <button className="text-link" type="button" onClick={() => { setAddress(emptyAddress); setStep(0); }}>Clear sample address</button>
           </>}
         </div>
